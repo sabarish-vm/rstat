@@ -19,14 +19,14 @@ fn datetime_print(res: Result<SystemTime, Error>, opts: &Data) {
         Ok(result) => {
             if opts.units == "e" {
                 let epochtime = result.duration_since(UNIX_EPOCH).unwrap().as_secs_f64();
-                print!("{} ", epochtime)
+                print!("{} ; ", epochtime)
             } else if opts.units == "h" {
                 let datetime: DateTime<Local> = result.into();
-                print!("{} ", datetime.format(&opts.o_format))
+                print!("{} ; ", datetime.format(&opts.o_format))
             } else if opts.units == "a" {
                 let datetime: DateTime<Local> = result.into();
                 let epochtime = result.duration_since(UNIX_EPOCH).unwrap().as_secs_f64();
-                print!("{} {} ", epochtime, datetime.format(&opts.o_format));
+                print!("{} {} ; ", epochtime, datetime.format(&opts.o_format));
             }
         }
         Err(_) => {
@@ -40,7 +40,7 @@ fn file_modification_time(data: &Data) {
         let met = fs::metadata(filename);
         match met {
             Ok(metadata) => {
-                print!("{} ", filename.to_str().unwrap());
+                print!("{} ; ", filename.to_str().unwrap());
                 if data.modif_bool {
                     let modif = metadata.modified();
                     datetime_print(modif, data);
@@ -50,8 +50,8 @@ fn file_modification_time(data: &Data) {
                     datetime_print(modif, data);
                 }
             }
-            Err(_) => {
-                println!("{} === file-metadata-not-found", filename.to_str().unwrap());
+            Err(err) => {
+                println!("{} {}", filename.to_str().unwrap(), err);
             }
         }
         println!()
@@ -67,13 +67,15 @@ fn argparse() -> Data {
             Arg::new("modif_need")
                 .short('m')
                 .help("Flag to enable outputting of Modification time")
-                .action(ArgAction::SetTrue),
+                .action(ArgAction::SetTrue)
+                .default_value("false"),
         )
         .arg(
             Arg::new("created_need")
                 .short('c')
                 .help("Flag to enable outputting of Creation time")
-                .action(ArgAction::SetTrue),
+                .action(ArgAction::SetTrue)
+                .default_value("false"),
         )
         .arg(
             Arg::new("units")
@@ -101,8 +103,12 @@ fn argparse() -> Data {
         .unwrap()
         .map(|s| PathBuf::from_str(s).unwrap())
         .collect::<Vec<PathBuf>>();
-    let modif_bool = matches.get_flag("modif_need");
-    let creation_bool = matches.get_flag("created_need");
+    let mut modif_bool: bool = matches.get_flag("modif_need");
+    let mut creation_bool: bool = matches.get_flag("created_need");
+    if !modif_bool && !creation_bool {
+        modif_bool = true;
+        creation_bool = true;
+    }
     let o_format: String = matches.get_one::<String>("format").unwrap().into();
     let units = matches.get_one::<String>("units").unwrap().to_owned();
     Data {
