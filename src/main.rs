@@ -6,15 +6,31 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-struct Data {
+#[derive(Debug)]
+enum CliError {
+    ErrorRstat,
+}
+
+impl From<std::io::Error> for CliError {
+    fn from(_: std::io::Error) -> CliError {
+        CliError::ErrorRstat
+    }
+}
+
+struct Opts {
     files: Vec<PathBuf>,
     creation_bool: bool,
     modif_bool: bool,
+    access_bool: bool,
     o_format: String,
     units: String,
 }
 
-fn datetime_print(res: Result<SystemTime, Error>, opts: &Data) {
+struct MutOpts {
+    errored: bool,
+}
+
+fn datetime_print(res: Result<SystemTime, Error>, opts: &Opts, mut_opts: &mut MutOpts) {
     match res {
         Ok(result) => {
             if opts.units == "e" {
@@ -30,27 +46,33 @@ fn datetime_print(res: Result<SystemTime, Error>, opts: &Data) {
             }
         }
         Err(_) => {
+            mut_opts.errored = true;
             print!("");
         }
     }
 }
 
-fn file_modification_time(data: &Data) {
-    for filename in &data.files {
+fn file_modification_time(opts: &Opts, mut_opts: &mut MutOpts) {
+    for filename in &opts.files {
         let met = fs::metadata(filename);
         match met {
             Ok(metadata) => {
                 print!("{} ; ", filename.to_str().unwrap());
-                if data.modif_bool {
+                if opts.modif_bool {
                     let modif = metadata.modified();
-                    datetime_print(modif, data);
+                    datetime_print(modif, opts, mut_opts);
                 }
-                if data.creation_bool {
+                if opts.creation_bool {
                     let modif = metadata.created();
-                    datetime_print(modif, data);
+                    datetime_print(modif, opts, mut_opts);
+                }
+                if opts.access_bool {
+                    let modif = metadata.accessed();
+                    datetime_print(modif, opts, mut_opts);
                 }
             }
             Err(err) => {
+                mut_opts.errored = true;
                 println!("{} {}", filename.to_str().unwrap(), err);
             }
         }
@@ -58,11 +80,18 @@ fn file_modification_time(data: &Data) {
     }
 }
 
-fn argparse() -> Data {
+fn argparse() -> (Opts, MutOpts) {
     let matches = Command::new("File stat")
         .author("Sabarish, github.com/sabarish-vm")
         .about("An alternative to stat command written in rust an os-independent solution")
         .arg(Arg::new("paths").action(ArgAction::Append).required(true))
+        .arg(
+            Arg::new("created_need")
+                .short('c')
+                .help("Flag to enable outputting of Creation time")
+                .action(ArgAction::SetTrue)
+                .default_value("false"),
+        )
         .arg(
             Arg::new("modif_need")
                 .short('m')
@@ -71,9 +100,9 @@ fn argparse() -> Data {
                 .default_value("false"),
         )
         .arg(
-            Arg::new("created_need")
-                .short('c')
-                .help("Flag to enable outputting of Creation time")
+            Arg::new("access_need")
+                .short('a')
+                .help("Flag to enable outputting of Accessed time")
                 .action(ArgAction::SetTrue)
                 .default_value("false"),
         )
@@ -105,22 +134,33 @@ fn argparse() -> Data {
         .collect::<Vec<PathBuf>>();
     let mut modif_bool: bool = matches.get_flag("modif_need");
     let mut creation_bool: bool = matches.get_flag("created_need");
-    if !modif_bool && !creation_bool {
+    let mut access_bool: bool = matches.get_flag("access_need");
+    if !modif_bool && !creation_bool && !access_bool {
         modif_bool = true;
         creation_bool = true;
+        access_bool = true;
     }
     let o_format: String = matches.get_one::<String>("format").unwrap().into();
     let units = matches.get_one::<String>("units").unwrap().to_owned();
-    Data {
-        modif_bool,
-        creation_bool,
-        files,
-        o_format,
-        units,
-    }
+    (
+        Opts {
+            modif_bool,
+            creation_bool,
+            access_bool,
+            files,
+            o_format,
+            units,
+        },
+        MutOpts { errored: false },
+    )
 }
 
-fn main() {
-    let data = argparse();
-    file_modification_time(&data);
+fn main() -> Result<(), CliError> {
+    let (opts, mut mutopts) = argparse();
+    file_modification_time(&opts, &mut mutopts);
+    if mutopts.errored {
+        Err(CliError::ErrorRstat)
+    } else {
+        Ok(())
+    }
 }
